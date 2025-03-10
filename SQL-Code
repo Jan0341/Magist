@@ -1,0 +1,271 @@
+#2.1.1 What categories of tech products does Magist have?
+
+SELECT DISTINCT
+   	p.product_category_name,
+   	t.product_category_name_english
+FROM products p
+INNER JOIN product_category_name_translation t
+  ON p.product_category_name = t.product_category_name;
+
+# Now we put these 7 Categories in one higher-level category called “Tech” and all the Others to “Other” and Counting the products inside the categorys: 
+
+SELECT
+	CASE
+    	WHEN t.product_category_name_english IN ('computer_accessories', 'telephony', 'electronics', 'consoles_games', 'computers', 'pc_gamer')
+    	THEN 'Tech'
+    	ELSE 'Other'
+	END AS product_category,
+	COUNT(p.product_id) AS product_count
+FROM products p
+JOIN product_category_name_translation t
+  ON p.product_category_name = t.product_category_name
+GROUP BY
+	CASE
+    	WHEN t.product_category_name_english IN ('computer_accessories', 'telephony', 'electronics', 'consoles_games', 'computers', 'pc_gamer')
+    	THEN 'Tech'
+    	ELSE 'Other'
+	END;
+
+#2.1.2 How many products of these tech categories have been sold (within the time window of the database snapshot)?
+
+SELECT
+    cs.product_category_name,
+    cs.product_category_name_english,
+    cs.products_count,
+    (cs.products_count * 100.0 / 134936 /*ts.total_products*/) AS percentage_of_total_sales
+FROM
+    (SELECT
+        products.product_category_name,
+        product_category_name_translation.product_category_name_english,
+        COUNT(DISTINCT products.product_id) AS products_count
+    FROM
+        products
+    JOIN
+        product_category_name_translation ON product_category_name_translation.product_category_name = products.product_category_name
+    WHERE
+        product_category_name_translation.product_category_name_english IN (
+            'computers_accessories', 'watches_gifts,telephony', 'electronics',
+            'consoles_games', 'audio, dvds_blu_ray', 'computers', 'tablets_printing_image', 'pc_gamer', 'cds_dvds_musicals'
+        )
+    GROUP BY
+        products.product_category_name, product_category_name_translation.product_category_name_english
+    ) AS cs,
+    (SELECT SUM(products_count) AS total_products
+    FROM (SELECT
+        products.product_category_name,
+        product_category_name_translation.product_category_name_english,
+        COUNT(DISTINCT products.product_id) AS products_count
+    FROM
+        products
+    JOIN
+        product_category_name_translation ON product_category_name_translation.product_category_name = products.product_category_name
+    WHERE
+        product_category_name_translation.product_category_name_english IN (
+            'computers_accessories', 'watches_gifts,telephony', 'electronics',
+            'consoles_games', 'audio, dvds_blu_ray', 'computers', 'tablets_printing_image', 'pc_gamer', 'cds_dvds_musicals'
+        )
+    GROUP BY
+        products.product_category_name, product_category_name_translation.product_category_name_english
+    ) as temp_total) AS ts
+ORDER BY
+    cs.products_count DESC;
+
+#2.1.3 What percentage does that represent from the overall number of products sold?
+Same as previous. 
+
+SELECT
+	CASE
+    	WHEN t.product_category_name_english IN ('computer_accessories', 'telephony', 'electronics', 'consoles_games', 'computers', 'pc_gamer')
+    	THEN 'Tech'
+    	ELSE 'Other'
+	END AS product_category,
+	AVG(op.payment_value) AS total_sold
+FROM products p
+JOIN product_category_name_translation t
+	ON p.product_category_name = t.product_category_name
+LEFT JOIN order_items oi
+	ON p.product_id = oi.product_id
+LEFT JOIN order_payments op
+	ON oi.order_id = op.order_id
+GROUP BY
+	CASE
+    	WHEN t.product_category_name_english IN ('computer_accessories', 'telephony', 'electronics', 'consoles_games', 'computers', 'pc_gamer')
+    	THEN 'Tech'
+    	ELSE 'Other'
+	END;
+
+# Output: Other average payment value 175€ Tech average payment value	136€
+
+#2.1.4 What’s the average price of the products being sold?
+
+select avg(price) from order_items;
+
+/* average price of tech products*/
+SELECT 
+    products.product_category_name,product_category_name_translation.product_category_name_english, 
+    COUNT(DISTINCT products.product_id) AS products_count, avg(order_items.price)
+FROM
+    products join product_category_name_translation on product_category_name_translation.product_category_name = products.product_category_name 
+    join order_items on order_items.product_id= products.product_id
+    where product_category_name_translation.product_category_name_english in ('computers_accessories', 'watches_gifts,telephony', 'electronics',
+    'consoles_games','audio, dvds_blu_ray', 'computers', 'tablets_printing_image', 'pc_gamer', 'cds_dvds_musicals')
+GROUP BY product_category_name
+
+#2.1.5 Are expensive tech products popular? *
+
+SELECT 
+    COUNT(product_id),
+    CASE
+        WHEN
+            average_price > (SELECT 
+                    AVG(average_price)
+                FROM
+                    (SELECT 
+                        product_id, AVG(price) AS average_price
+                    FROM
+                        order_items
+                    GROUP BY product_id) AS temp_overall) + 50
+        THEN
+            'expensive'
+        WHEN
+            average_price BETWEEN (SELECT 
+                    AVG(average_price)
+                FROM
+                    (SELECT 
+                        product_id, AVG(price) AS average_price
+                    FROM
+                        order_items
+                    GROUP BY product_id) AS temp_overall) - 50 AND (SELECT 
+                    AVG(average_price)
+                FROM
+                    (SELECT 
+                        product_id, AVG(price) AS average_price
+                    FROM
+                        order_items
+                    GROUP BY product_id) AS temp_overall) + 50
+        THEN
+            'mild'
+        ELSE 'cheap'
+    END AS price_cat
+FROM
+    (SELECT 
+        product_id, AVG(price) AS average_price
+    FROM
+        order_items
+    GROUP BY product_id) AS temp_product
+GROUP BY price_cat
+ORDER BY COUNT(product_id) DESC;
+
+#2.2.0 In relation to the sellers:
+#2.2.1 How many months of data are included in the magist database?
+
+SELECT
+    YEAR(order_purchase_timestamp) AS year_,
+    COUNT(DISTINCT MONTH(order_purchase_timestamp)) AS distinct_month_count
+FROM
+    orders
+GROUP BY
+    YEAR(order_purchase_timestamp)
+ORDER BY
+    year_;
+
+#2.2.2 How many sellers are there? 
+SELECT count(seller_id) FROM sellers;
+SELECT count(customer_id) FROM customers;
+
+#Output: There are 3095 Sellers and 99441 Customers
+
+#How many Tech sellers are there?
+
+SELECT
+	COUNT(DISTINCT oi.seller_id) AS tech_sellers_count
+FROM order_items oi
+JOIN products p
+	ON oi.product_id = p.product_id
+JOIN product_category_name_translation t
+	ON p.product_category_name = t.product_category_name
+WHERE t.product_category_name_english IN ('computer_accessories', 'telephony', 'electronics', 'consoles_games', 'computers', 'pc_gamer');
+
+#There are 296 Tech sellers 
+
+# What percentage of overall sellers are Tech sellers?
+
+SELECT
+    seller_sales.seller_id,
+    seller_sales.items_sold,
+    seller_sales.total_seller_payments,
+    round((seller_sales.total_seller_payments * 100.0 / total_sales.grand_total_payments)) AS percentage_of_total_payments
+FROM
+    (SELECT
+        order_items.seller_id,
+        COUNT(order_items.seller_id) AS items_sold,
+        round(SUM(order_payments.payment_value)) AS total_seller_payments
+    FROM
+        order_items
+    JOIN products ON products.product_id = order_items.product_id
+    JOIN product_category_name_translation ON product_category_name_translation.product_category_name = products.product_category_name
+    JOIN order_payments ON order_items.order_id = order_payments.order_id
+    WHERE
+        product_category_name_translation.product_category_name_english IN (
+            'computers_accessories', 'watches_gifts,telephony', 'electronics', 'consoles_games', 'audio, dvds_blu_ray',
+            'computers', 'tablets_printing_image', 'pc_gamer', 'cds_dvds_musicals'
+        )
+    GROUP BY
+        order_items.seller_id
+    ) AS seller_sales,
+    (SELECT
+        SUM(total_seller_payments) AS grand_total_payments
+    FROM
+        (SELECT
+            order_items.seller_id,
+            SUM(order_payments.payment_value) AS total_seller_payments
+        FROM
+            order_items
+        JOIN products ON products.product_id = order_items.product_id
+        JOIN product_category_name_translation ON product_category_name_translation.product_category_name = products.product_category_name
+        JOIN order_payments ON order_items.order_id = order_payments.order_id
+        WHERE
+            product_category_name_translation.product_category_name_english IN (
+                'computers_accessories', 'watches_gifts,telephony', 'electronics', 'consoles_games', 'audio, dvds_blu_ray',
+                'computers', 'tablets_printing_image', 'pc_gamer', 'cds_dvds_musicals'
+            )
+        GROUP BY
+            order_items.seller_id
+        ) AS temp_total
+    ) AS total_sales
+ORDER BY
+    seller_sales.total_seller_payments DESC;
+
+#2.2.3 What is the total amount earned by all sellers? What is the total amount earned by all Tech sellers?
+
+SELECT SUM(order_payments.payment_value) AS sum_of_all_payments FROM order_items JOIN order_payments ON order_items.order_id = order_payments.order_id;
+
+#2.2.4 Can you work out the average monthly income of all sellers? Can you work out the average monthly income of Tech sellers?
+
+/*sum_of_tech_prices*/
+select sum(order_items.price) as sum_of_tech_prices, round(sum(order_items.price)/25) as revenue_per_month
+from order_items join products on products.product_id=order_items.product_id join product_category_name_translation 
+on product_category_name_translation.product_category_name_english= products.product_category_name WHERE
+        product_category_name_translation.product_category_name_english IN (
+            'computers_accessories', 'watches_gifts,telephony', 'electronics',
+            'consoles_games', 'audio, dvds_blu_ray', 'computers', 'tablets_printing_image', 'pc_gamer', 'cds_dvds_musicals');
+
+            
+/*sum_of_all_prices*/            
+ select round(sum(order_items.price)) as sum_of_all_prices, round(sum(order_items.price)/25) as revenue_per_month
+from order_items ;
+
+
+#2.3.0 In relation to the delivery time:
+
+
+
+#2.3.1 What’s the average time between the order being placed and the product being delivered?
+
+
+
+
+#2.3.2 How many orders are delivered on time vs orders delivered with a delay?
+
+#2.3.3 Is there any pattern for delayed orders, e.g. big products being delayed more often?
+
